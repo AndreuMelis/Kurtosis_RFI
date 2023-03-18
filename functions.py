@@ -29,7 +29,7 @@ def test_thr(n):
     T = 300
     noise_variance_thr = 2*kb*T*2e6*10**(6)*4*50
     print("Theoretical noise variance = "+str(noise_variance_thr)+"\n")
-    thr = (noise_variance_thr)*(np.log(1/Pfa))
+    thr = np.sqrt((noise_variance_thr)*(np.log(1/Pfa)))
     lower_thr = 2-thr
     upper_thr = 2+thr
     return lower_thr, upper_thr
