@@ -28,7 +28,7 @@ N_buffer = int(len(samples)/buffer_size)
 lower_thr, upper_thr = test_thr(buffer_size)
 
 #samples_rm_dc, buffer_size_rm_dc = remove_dc(samples, buffer_size, fs, n_bins)
-Sxx, f_s, t_s = spectrogram(fs, buffer_size, samples, buffer_size)
+Sxx, f_s, t_s = abs_spectrogram(fs, buffer_size, samples, buffer_size)
 
 #Compute kurtosis from captured signal
 i = 0
