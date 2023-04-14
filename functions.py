@@ -13,6 +13,7 @@ def variance(x, n, mean_r, mean_i):
         var += ((x.real-mean_r)*(x.real-mean_r))+((x.imag-mean_i)*(x.imag-mean_i))
     return var/n
 
+#Time Complex Kurtosis
 def complex_kurtosis(x, n):
     real_mean = 1/n*(np.sum(x.real))
     imag_mean = 1/n*(np.sum(x.imag))
@@ -25,14 +26,24 @@ def complex_kurtosis(x, n):
     return (n/(n-1))*fourth_moment/(var*var), var
 
 def spectral_kurtosis(x, n):
-    columns, rows = np.shape(x)
-    k_matrix_f = np.empty((columns, int(rows/n)))
+
+    mean_kurtosis = 2
+    var_kurtosis = 4/(6250) 
+    gaus_thr = gaussian_thr(0, np.sqrt(var_kurtosis), 10e-4)
+    upper_thr = mean_kurtosis+gaus_thr
+    lower_thr = mean_kurtosis-gaus_thr
+
+    rows, columns = np.shape(x)
+    k_matrix_f = np.empty((rows, int(columns/n)))
+    mask_matrix = np.empty((rows, int(columns/n)))
     fourth_moment_f = 0
-    for j in range(columns):
+    for j in range(rows):
+        #select frequency bin j
         f_bin = x[j,:]
         k = 0
         i = 0
         while(i<len(f_bin)-1):
+            #from frequency bin j select frequency samples corresponding to Trad
             f_sub_bin = f_bin[i:(i+n)]
             real_mean_f = np.mean(f_sub_bin.real)
             imag_mean_f = np.mean(f_sub_bin.imag)
@@ -41,28 +52,17 @@ def spectral_kurtosis(x, n):
                     fourth_moment_f += (((fr-real_mean_f)*(fr-real_mean_f))+((fi-imag_mean_f)*(fi-imag_mean_f)))*(((fr-real_mean_f)*(fr-real_mean_f))+((fi-imag_mean_f)*(fi-imag_mean_f)))
             fourth_moment_f = fourth_moment_f/n
             k_f = (n/(n-1))*fourth_moment_f/(var_f*var_f)
+            if(k_f > 2.5 or k_f < 1.5):
+                mask = 0
+            else:
+                mask = 1
             k_matrix_f[j,k]=k_f
+            mask_matrix[j,k]=mask
             k+=1
             i+=n
     t = []
-    t = list(range(int(rows/n)))
-    return k_matrix_f,t
-
-def test_thr(n):
-    Pfa = 10e-4
-    T = 300
-    noise_variance_thr = 2*kb*T*2e6*(10**(6))*4*50
-    print("Theoretical noise variance = "+str(noise_variance_thr)+"\n")
-    thr = np.sqrt((noise_variance_thr)*(np.log(1/Pfa)))
-    lower_thr = 2-thr
-    upper_thr = 2+thr
-    return lower_thr, upper_thr
-
-def exp_thr(var, pfa):
-    exp_th_coef = -2*np.log(pfa)
-    thr = list(map(lambda x: exp_th_coef*x, (var)))
-    thr = np.sqrt(thr)
-    return thr
+    t = list(range(int(columns/n)))
+    return k_matrix_f,mask_matrix,t
 
 def gaussian_thr(mean, std, pfa):
     return (mean + std*np.sqrt(2)*erfinv(2*(1-pfa)-1))
@@ -72,35 +72,9 @@ def abs_spectrogram(fs, win_length, x, buffer_size):
     Sxx = np.abs(Zxx)**2
     return Sxx, f, t
 
-def spectrogram(fs, win_length, x):
-    f,t,Zxx = signal.stft(x, fs, window='hamming', nperseg=win_length, nfft=win_length, noverlap=win_length*0.5)
+def spectrogram(fs, win_length, x, overlap):
+    f,t,Zxx = signal.stft(x, fs, window='hamming', nperseg=win_length, nfft=win_length, noverlap=win_length*overlap)
     return Zxx, f, t
-
-def remove_dc(x, n, fs, n_bins):
-    
-    X = np.empty((int((len(x)/n)*(n-n_bins))), dtype=np.complex128)
-    y = np.empty((int((len(x)/n)*(n-n_bins))), dtype=np.complex128)
-
-    i=0
-    j=0
-    while(i<len(x)):
-        X_fft = np.fft.fft(x[i:(i+n)])
-        X_fft = X_fft[n_bins:]
-        for xfft in X_fft:
-            X[j] = xfft
-            j+=1
-        i += n
-
-    i=0
-    j=0
-    while(i<len(X)):
-        y_ifft = np.fft.ifft(X[i:(i+n-n_bins)])
-        for yfft in y_ifft:
-            y[j] = yfft
-            j+=1
-        i+=(n-n_bins)
-    print(str(y[60000]))
-    return y, (n-n_bins)
 
 def sub_vector_mean(input_vect, sub_vect_length):
     result_vect=[]
@@ -110,15 +84,42 @@ def sub_vector_mean(input_vect, sub_vect_length):
         result_vect.append(sub_vect_mean)
     return result_vect
 
-def interference_generator(fs, fc, length, num_pulses):
-    t_end = (length/fs)/num_pulses
-    t = np.arange(0, t_end,1/fs)
+def pulsed_signal(fs, fc, length, num_pulses, pulsewidth):
+    t_end = round((length/fs)/num_pulses, 4)
+    t = np.arange(0, t_end-1/fs,1/fs)
     x = 0.02*np.sin(2*np.pi*fc*t)
-    x[0:int((fs*t_end/1.001))] = 0
+    pulsewidth_samples = fs*pulsewidth
+    N_samples = fs*t_end
+    x[0:int(N_samples-pulsewidth_samples)] = 0
     i = 0
     y = x
     while(i<(num_pulses-1)):
         y = np.concatenate((y, x))
         i+=1
-    
+    if(len(y)<length):
+        dif = length-len(y)
+        aux = np.zeros(dif)
+        y = np.concatenate((y, aux))
+    if(len(y)>length):
+        dif = abs(length-len(y))
+        y = y[0:len(y)-dif]
+
     return y
+
+def chirp_signal(f0, f1, t1, t):
+    #chirp signal across the band
+    rfi_chirp = 10*np.sin(2*np.pi*t*(f0 + (f1-f0)*np.power(t,2)/(3*t1**2)))
+    return rfi_chirp
+
+def sin_freq_singal(fc, fdev, fsin, t):
+    #signal with frequency varying as a sinusoid
+    fc = 2*np.pi*fc*t
+    fm = 2*np.pi*fdev*np.sin(fsin * 2*np.pi*t)
+    rfi_sin  = 0.5*np.sin(fc+fm)
+    return rfi_sin
+
+def filter_dc(x, fs):
+    b, a = signal.butter(1, 0.05, 'highpass', fs=fs)
+    y = signal.filtfilt(b, a, x)
+    return y
+

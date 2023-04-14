@@ -20,11 +20,19 @@ N_buffer = 1200
 k = 0
 i = 0
 n_bins = 10#freq bins to remove from remove_dc
-M = int(((Trad*fs)/4096)/4)#number of buffers integrated per kurtosis value
+N_kurt_Trad = 4 #number of kurtosis values per Trad
+M = int(((Trad*fs)/4096)/N_kurt_Trad) #number of buffers integrated per kurtosis value
 noise_mask = np.ones(2*buffer_size*N_buffer).view(np.complex128)
 
 noise = np.random.normal(0,np.sqrt(kb*300*2e6*10**(6)*4*50),2*buffer_size*N_buffer).view(np.complex128)
-rfi = interference_generator(fs, 20e3, buffer_size*N_buffer, 10)
+
+pri = 4e-1#[s]
+pulsewidth = 2e-5
+fc = 20e3
+pri_samples = pri*fs
+N_pulses = int(buffer_size*N_buffer/pri_samples)
+rfi = pulsed_signal(fs, fc, buffer_size*N_buffer, N_pulses, pulsewidth)
+
 sign = noise+rfi
 
 mean_kurtosis = 2
@@ -41,7 +49,7 @@ while(i<N_buffer*(buffer_size)):
 
     if(k_noise > upper_thr or k_noise < lower_thr):
         noise_mask[i:(M*buffer_size+i)] = 0j
-        time_log.append(i/(M*buffer_size*fs))
+        time_log.append(i/(fs))#logs time of each buffer with rfi
 
     computed_noise_variance.append(noise_variance)
     i += M*buffer_size
@@ -71,11 +79,17 @@ plt.legend(["Kurtosis Noise", "Upper thr", "Lower thr", "Mean Noise Kurtosis"])
 plt.title("Complex Kurtosis")
 plt.ylabel("Kurtosis")
 plt.xlabel("Sample per integrated buffer")
-plt.figure(2)
+
+fig = plt.figure(2)
 t = np.arange(0,len(sign))
+major_ticks = np.arange(0,N_buffer*buffer_size, buffer_size*M)
+ax = fig.add_subplot(1,1,1)
+ax.set_xticks(major_ticks)
 plt.plot(t, noise_mask)
-#plt.plot(t, sign)
+plt.plot(t, sign)
 plt.plot(t, clear_signal)
+ax.grid(which='minor', alpha = 0.2)
+ax.grid(which='major', alpha = 0.5)
 plt.legend(["Mask", "Rx Signal", "Masked Signal"])
 """
 def gaussian(x, A, mu, sigma):

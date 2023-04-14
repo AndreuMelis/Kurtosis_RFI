@@ -1,0 +1,9 @@
+test_complex_kurtosis.py implementa kurtosis en el domini del temps amb un rfi 
+del tipus polsat
+
+spectral_kurtosis.py implementa kurtosis en el domini temps-freqüencia
+
+functions.py implementa les funcions de dsp que s'utilitzen en els arxius anteriors
+
+plot_spectogram.py es pot utilitzar per simular i fer els plots dels diferents 
+tipus de senyals rfi que es poden simular
