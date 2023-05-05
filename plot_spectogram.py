@@ -3,55 +3,87 @@ import scipy.stats as stats
 import numpy as np
 import matplotlib.pyplot as plt
 from read_data_from_file import *
-from scipy.constants import k as kb
-from scipy import signal
-from scipy.fft import fft, fftfreq
 from functions import *
-from numpy import matlib
+from tqdm import tqdm
+from PIL import Image
+import imageio
+import sys
 
-
-fs = 2e6
-buffer_size = 128
-t_end = 1 #seconds of simulation
-N_buffer = int((t_end*fs)/128)
-fftsize =128 #with 0.75 overlap is a 32 fft in time domain
-fft_overlap = 0.75
+#Initialize variable
+fs = 4.096e6
 Trad = 100e-3
-t = np.arange(0.0, N_buffer*buffer_size/fs, 1/fs)
+Nint = 1e-3
+samples = []
+buffer_size = 4096
+k_vect = []
+k_vect_filtered = []
+time_log = []
+k = 0
+N_kurt_Trad = 4 #number of kurtosis values per Trad
+N_buffer = int(len(samples)/buffer_size)
+M = int(((Trad*fs)/4096)/N_kurt_Trad) #number of buffers integrated per kurtosis value
+fftsize = 1024
+f_low = 0.25e6
+f_high = 1.25e6
+N_kurtosis_chunk = 1 # must be multiples of 4
+chunk_size = Trad*fs*4
 
-noise = np.random.normal(0,np.sqrt(kb*300*2e6*10**(6)*4*50),2*buffer_size*N_buffer).view(np.complex128)
+frames = []
+#Read output from rita-mwr.cpp
+if len(sys.argv) > 1:
+    file_name = sys.argv[1]
+    print("\nStarting RFI detection\n")
+else: 
+    print("Usage: python3 /home/andreu/TFG/RFI/Kurtosis/complex_kurtosis_if_v2.py data/data1.bin")
 
-#select type of rfi to be detected
-rfi_type = "chirp"
+file_name = "data_gps.bin"
 
-if(rfi_type == "sin"):
-    #signal with frequency varying as a sinusoid
-    rfi = sin_freq_singal(400e3, 5e3, 2, t)
+with open(file_name, "rb") as f:
+    mm = mmap.mmap(f.fileno(), length=0, access=mmap.ACCESS_READ)
+    num_samples = len(mm)//(2*4)
+    num_chunks = int((num_samples-1)//chunk_size)
+    t_increment = chunk_size/fs
+    samples_total = np.empty(num_samples, dtype=np.complex64)
+    fig, ax = plt.subplots()
+    im = ax.imshow([[0, 0], [0, 0]], cmap='viridis')
 
-if(rfi_type == "pulsed"):
-    #burst of pulses
-    pri = 4e-2
-    pulsewidth = 2e-3
-    f_pulses = 200e3
-    pri_samples = pri*fs
-    N_pulses = int(buffer_size*N_buffer/pri_samples)
-    rfi = pulsed_signal(fs, f_pulses, buffer_size*N_buffer, N_pulses, pulsewidth)
+    for i in tqdm(range(num_chunks), colour='green'):
+        start_index = int(i*chunk_size)
+        end_index = int(min((i+1)*chunk_size, num_samples))
+        chunk_size = end_index - start_index
+        byte_string = mm[start_index*8:end_index*8]
+        complex_arr = np.frombuffer(byte_string, dtype=np.float32, count=2*chunk_size)
+        complex_arr = complex_arr.reshape((-1,2))
+        samples = complex_arr[:, 0] + 1j * complex_arr[:, 1]
+        samples_filtered = butter_bandpass_filter(samples, f_low, f_high, fs, order = 32)
+        Sxx_filtered, f_s, t = spectrogram(fs, fftsize, samples_filtered, 0.5)
 
-if(rfi_type == "chirp"):
-    #chirp signal across the band
-    rfi = chirp_signal(100e3, 700e3, t_end, t)
+        samples_total[i*chunk_size:(i+1)*chunk_size] = samples_filtered
+        im = ax.imshow(10*np.log10(np.abs(Sxx_filtered)**2), aspect='auto', origin='lower', extent=[t[0]+t_increment*i, t[-1]+t_increment*i, 0, fs])
 
-#select type of interference
-sign = noise + rfi
+        # Add title and labels
+        ax.set_xlim(t[0]+t_increment*i, t[-1]+t_increment*i)
+        ax.set_ylim(0, fs)
+        ax.set_title('Spectrogram')
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('Frequency (Hz)')
+        # Update the plot
+        plt.draw()
+        plt.pause(0.001)
+        # Add the current figure to the list of frames
+        fig.canvas.draw()
+        frame = Image.frombytes('RGB', fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+        frames.append(frame)
+        # Remove the old spectrogram before plotting the next one
+        im.remove()
 
-#compute spectogram
-Zxx, f_s, t_s = spectrogram(fs, fftsize, sign, fft_overlap)
+plt.close(fig)
 
-#plot spectogram
-
-
+filename = 'bar.gif'
+imageio.mimsave(filename, frames, duration=0.1)
+'''
 fig, ax = plt.subplots()
-plt.pcolormesh(t_s, f_s[:len(f_s)//2], np.abs(Zxx[:(fftsize//2), :]), cmap='viridis')
+plt.pcolormesh(t_s, f_s[:len(f_s)//2], np.abs(np.abs(Sxx_filtered[:(fftsize//2), :])), cmap='viridis')
 plt.colorbar()
 """
 ax.set_yticks(np.arange(0, fs/2, fs/fftsize))
@@ -62,11 +94,11 @@ plt.title('STFT Magnitude')
 plt.ylabel('Frequency [Hz]')
 plt.xlabel('Time [sec]')
 
-"""
-plt.specgram(sign, NFFT=fftsize, Fs=fs, noverlap=fft_overlap*fftsize, cmap="jet", window=np.hamming(fftsize))
+
+plt.specgram(samples_total, NFFT=fftsize, Fs=fs, noverlap=0.25*fftsize, cmap="jet", window=np.hamming(fftsize), sides='onesided')
 plt.colorbar()
 plt.title('STFT Magnitude')
 plt.ylabel('Frequency [Hz]')
 plt.xlabel('Time [sec]')
-"""
+'''
 plt.show()

@@ -19,12 +19,11 @@ sub_vect_length = 10
 N_buffer = 1200
 k = 0
 i = 0
-n_bins = 10#freq bins to remove from remove_dc
 N_kurt_Trad = 4 #number of kurtosis values per Trad
 M = int(((Trad*fs)/4096)/N_kurt_Trad) #number of buffers integrated per kurtosis value
 noise_mask = np.ones(2*buffer_size*N_buffer).view(np.complex128)
 
-noise = np.random.normal(0,np.sqrt(kb*300*2e6*10**(6)*4*50),2*buffer_size*N_buffer).view(np.complex128)
+noise = np.random.normal(0,np.sqrt(kb*300*1e6*10**(6)*50),2*buffer_size*N_buffer).view(np.complex128)
 
 pri = 4e-1#[s]
 pulsewidth = 2e-5
@@ -104,4 +103,40 @@ x = np.linspace(bin_edges[0], bin_edges[-1], 100)
 plt.hist(k_vect_noise)
 plt.plot(x, gaussian(x, *params), 'r-', linewidth=2)
 """
+
+plt.figure(3)
+hist, bins = np.histogram(sign, bins=1000)
+highest_bars_indices = np.where(hist == np.max(hist))[0]
+highest_bins = bins[highest_bars_indices]
+bin_centers = (bins[:-1] + bins[1:]) / 2
+
+# Compute the mean of the distribution from the samples
+mean = np.mean(sign)
+var = variance(sign, len(sign), sign.real.mean(), sign.imag.mean())
+std_dev = np.sqrt(var)
+
+# Estimate the standard deviation from the histogram data
+mean_hist = np.sum(bin_centers * hist) / np.sum(hist)
+std_dev_hist = np.sqrt(np.sum((bin_centers - mean_hist)**2 * hist) / np.sum(hist))
+var_hist = std_dev_hist**2
+
+std_dev = np.sqrt(variance(sign, len(sign), sign.real.mean(), sign.imag.mean()))
+#plt.hist(samples, bins = 1000, color='red')
+plt.hist(sign, bins = 1000, color='blue')
+plt.axvline(x=mean+std_dev_hist, color='r', linestyle='--')
+plt.axvline(x=mean-std_dev_hist, color='r', linestyle='--')
+plt.axvline(x=mean+std_dev, color='y', linestyle='--')
+plt.axvline(x=mean-std_dev, color='y', linestyle='--')
+plt.axvline(x=mean, color='g', linestyle='--')
+plt.axvline(x=mean_hist, color='b', linestyle='--')
+plt.legend(['Mean + Std dev (hist)','Mean - Std dev (hist)','Mean + Std dev','Mean - Std dev', 'Mean', 'Mean (hist)'])
+plt.title("Maximum = " + str(np.abs(highest_bins))+" Mean = "+str(np.abs(mean))+ " Mean hist = "+str(np.abs(mean_hist)))
+
+print("########################\n########################\n")
+print("Mean = "+str(np.abs(mean)))
+print("Variance = "+str(np.abs(var)))
+print("Mean (hist) = "+str(np.abs(mean_hist)))
+print("Variance (hist) = "+str(np.abs(var_hist))+'\n')
+print("########################\n########################\n")
+
 plt.show()
